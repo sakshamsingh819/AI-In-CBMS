@@ -1,0 +1,14 @@
+# ══════════════════════════════════════════════════════════════════
+#  CMS — ML (heavy) requirements
+#  Adds TensorFlow for LSTM support (~3-10 GB download)
+#
+#  INSTALL AFTER requirements.txt:
+#    pip install -r requirements-ml.txt
+#
+#  NOTE: Skip this if you only need the Random Forest model.
+#        The backend starts fine without TensorFlow — it falls
+#        back to RF automatically when LSTM is unavailable.
+# ══════════════════════════════════════════════════════════════════
+
+# ── Deep learning (LSTM model) ────────────────────────────────────
+tensorflow==2.16.2

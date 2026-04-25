@@ -1,0 +1,21 @@
+# ══════════════════════════════════════════════════════════════════
+#  CMS — DEV / TEST requirements
+#  Install AFTER requirements.txt to run pytest suites.
+#
+#  INSTALL:
+#    pip install -r requirements-dev.txt
+#
+#  RUN TESTS:
+#    cd backend
+#    pytest tests/ -v
+# ══════════════════════════════════════════════════════════════════
+
+# ── Testing framework ─────────────────────────────────────────────
+pytest==8.3.2
+pytest-asyncio==0.23.8
+
+# ── ASGI test transport (used in test_antigravity_api.py) ─────────
+httpx==0.27.0
+
+# ── Code quality (optional) ───────────────────────────────────────
+ruff==0.4.9

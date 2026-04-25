@@ -59,7 +59,6 @@ def _build_stub_rf(n_classes: int) -> RandomForestClassifier:
         "Run backend/scripts/retrain_rf.py to train a real model."
     )
     rng = np.random.default_rng(42)
-    n_features = 48 if n_classes == 7 else 48
     n_features = 54 if n_classes == 7 else 48
     X_stub = rng.random((n_classes * 5, n_features))
     y_stub = np.repeat(np.arange(n_classes), 5)
