@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cms_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - ANTIGRAVITY_ENABLED=${ANTIGRAVITY_ENABLED:-false}
+      - SHAFT_RPM_DEFAULT=${SHAFT_RPM_DEFAULT:-1500}
+      - PRECESSION_RATIO=${PRECESSION_RATIO:-0.43}
+    env_file:
+      - .env
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cms_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    command: npm run dev -- --host
+    depends_on:
+      - backend
