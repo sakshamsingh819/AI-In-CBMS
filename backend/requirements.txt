@@ -1,43 +1,39 @@
 # ══════════════════════════════════════════════════════════════════
 #  CMS — CORE requirements (pinned, directly installable)
-#  Works on Python 3.11 | Windows / macOS / Linux
+#  Python 3.11 | Windows / macOS / Linux
 #
-#  INSTALL (recommended):
+#  INSTALL:
 #    pip install -r requirements.txt
-#
-#  THEN for ML models (optional, +~3 GB):
-#    pip install -r requirements-ml.txt
-#
-#  THEN for running tests:
-#    pip install -r requirements-dev.txt
 # ══════════════════════════════════════════════════════════════════
 
-# ── Web framework ─────────────────────────────────────────────────
+# Web framework
 fastapi==0.111.1
 uvicorn[standard]==0.30.1
 python-multipart==0.0.9
 
-# ── Data validation ───────────────────────────────────────────────
+# Data validation
 pydantic==2.7.4
 pydantic-settings==2.3.4
-email-validator==2.1.1
 
-# ── Numerical / Signal processing ─────────────────────────────────
+# Numerical / Signal processing
 numpy==1.26.4
 scipy==1.13.1
 
-# ── Machine learning (lightweight) ────────────────────────────────
+# Machine learning
 scikit-learn==1.5.1
 joblib==1.4.2
 
-# ── Environment & config ──────────────────────────────────────────
+# Visualisation (used by demo_results.py)
+matplotlib==3.9.1
+
+# Environment
 python-dotenv==1.0.1
 
-# ── Logging ───────────────────────────────────────────────────────
+# Logging
 loguru==0.7.2
 
-# ── HTTP client (used by tests + internal calls) ──────────────────
+# HTTP client
 httpx==0.27.0
 
-# ── Async support ─────────────────────────────────────────────────
+# Async support
 anyio==4.4.0
