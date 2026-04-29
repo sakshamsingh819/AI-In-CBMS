@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 
 # ── App import ────────────────────────────────────────────────────────────────
 
@@ -98,9 +98,7 @@ def antigravity_payload():
 @pytest_asyncio.fixture
 async def client():
     """Async test client for the FastAPI app."""
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
 
 

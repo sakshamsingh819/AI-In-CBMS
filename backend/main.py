@@ -23,14 +23,8 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load ML models on startup, release on shutdown."""
+    """Hook for lifecycle logging."""
     logger.info("Starting Condition Monitoring System API …")
-    antigravity_enabled = os.getenv("ANTIGRAVITY_ENABLED", "false").lower() == "true"
-    app.state.inference = InferenceService(antigravity_enabled=antigravity_enabled)
-    app.state.inference.load_models()
-    logger.info(
-        f"Models loaded | antigravity_enabled={antigravity_enabled}"
-    )
     yield
     logger.info("Shutting down — releasing model resources.")
 
@@ -52,6 +46,11 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
         lifespan=lifespan,
     )
+
+    antigravity_enabled = os.getenv("ANTIGRAVITY_ENABLED", "false").lower() == "true"
+    app.state.inference = InferenceService(antigravity_enabled=antigravity_enabled)
+    app.state.inference.load_models()
+    logger.info(f"Models loaded | antigravity_enabled={antigravity_enabled}")
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:5173")

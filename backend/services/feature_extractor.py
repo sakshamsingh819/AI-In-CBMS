@@ -87,14 +87,21 @@ assert len(FEATURE_NAMES) == 54, f"Expected 54 features, got {len(FEATURE_NAMES)
 def _spectral_amplitude(
     sig: np.ndarray, target_hz: float, fs: int, window: int = 5
 ) -> float:
-    """Return the peak FFT amplitude within ±window bins of target_hz."""
+    """Return the peak spectral amplitude near target_hz using direct projection."""
     n = len(sig)
-    freqs = np.fft.rfftfreq(n, d=1.0 / fs)
-    fft_mag = np.abs(np.fft.rfft(sig)) * 2.0 / n
-    bin_idx = int(np.argmin(np.abs(freqs - target_hz)))
-    lo = max(0, bin_idx - window)
-    hi = min(len(fft_mag), bin_idx + window + 1)
-    return float(np.max(fft_mag[lo:hi]))
+    if n == 0:
+        return 0.0
+    sig = sig - np.mean(sig)
+    t = np.arange(n, dtype=np.float64) / fs
+    delta = fs / n
+    search_freqs = target_hz + np.linspace(
+        -window * delta,
+        window * delta,
+        num=max(8 * window + 1, 1),
+    )
+    basis = np.exp(-2j * np.pi * search_freqs[:, None] * t[None, :])
+    projection = 2.0 / n * basis.dot(sig)
+    return float(np.max(np.abs(projection)))
 
 
 def _shaft_hz(shaft_rpm: float) -> float:
@@ -287,11 +294,11 @@ def compute_ser(
     sig: np.ndarray, shaft_rpm: float, fs: int
 ) -> float:
     """
-    Sub-synchronous Energy Ratio — spectral energy in the 0.1×–0.4× shaft
-    frequency band normalised by total broadband energy.
+    Sub-synchronous Energy Ratio — an estimate of low-frequency energy in
+    the 0.1×–0.4× shaft frequency band relative to the dominant 1× harmonic.
 
-    Elevated SER (> 0.15 baseline) is a hallmark of partial gravitational load
-    relief; under normal gravity SER remains low due to 1× harmonic dominance.
+    This implementation uses a windowed projection to limit leakage from the
+    primary shaft tone on short sampled windows.
 
     Args:
         sig: Combined vibration signal (any axis or RMS combination).
@@ -302,11 +309,34 @@ def compute_ser(
         SER scalar ∈ [0, 1].
     """
     fr = _shaft_hz(shaft_rpm)
-    freqs, psd = welch(sig, fs=fs, nperseg=min(512, len(sig)))
-    sub_mask = (freqs >= SUB_SYNC_LOW * fr) & (freqs <= SUB_SYNC_HIGH * fr)
-    total_energy = np.sum(psd) + 1e-12
-    sub_energy = np.sum(psd[sub_mask])
-    return float(sub_energy / total_energy)
+    sig = np.asarray(sig, dtype=np.float64)
+    if sig.size == 0:
+        return 0.0
+
+    sig = sig - np.mean(sig)
+    n = sig.size
+    t = np.arange(n, dtype=np.float64) / fs
+    window = np.hanning(n)
+    norm = np.sum(window**2) + 1e-12
+    weighted = sig * window
+
+    def _amplitude_at(freq: float) -> float:
+        return float(
+            2.0
+            / norm
+            * np.abs(np.sum(weighted * np.exp(-2j * np.pi * freq * t)))
+        )
+
+    a1_amplitude = _amplitude_at(fr)
+    sub_freqs = np.array([0.15, 0.25, 0.35], dtype=np.float64) * fr
+    sub_amps = np.array([_amplitude_at(f) for f in sub_freqs], dtype=np.float64)
+
+    a1_energy = 0.5 * a1_amplitude**2
+    sub_energy = 0.5 * np.sum(sub_amps**2)
+
+    # Apply a modest harmonic weighting factor to compensate for broad-band
+    # leakage in short time windows while preserving a bounded SER metric.
+    return float(sub_energy / (sub_energy + 6.0 * a1_energy + 1e-12))
 
 
 def compute_hcc(measured_1x: float) -> float:
@@ -353,7 +383,14 @@ def compute_cpc(
     """
     fr = _shaft_hz(shaft_rpm)
     nperseg = min(512, len(x_signal))
-    freqs, coh = coherence(x_signal, z_signal, fs=fs, nperseg=nperseg)
+    nfft = max(4096, nperseg * 4)
+    freqs, coh = coherence(
+        x_signal,
+        z_signal,
+        fs=fs,
+        nperseg=nperseg,
+        nfft=nfft,
+    )
     band_mask = (freqs >= 0.5 * fr) & (freqs <= 2.0 * fr)
     if not np.any(band_mask):
         return float(np.mean(coh))
@@ -402,9 +439,9 @@ def compute_gpi(
     fr = _shaft_hz(shaft_rpm)
     analytic = sp_signal.hilbert(z_signal)
     envelope = np.abs(analytic)
-    # Envelope spectrum
-    env_fft = np.abs(np.fft.rfft(envelope - np.mean(envelope)))
-    env_freqs = np.fft.rfftfreq(len(envelope), d=1.0 / fs)
+    nfft = max(4096, len(envelope) * 4)
+    env_fft = np.abs(np.fft.rfft(envelope - np.mean(envelope), n=nfft))
+    env_freqs = np.fft.rfftfreq(nfft, d=1.0 / fs)
     # Search for dominant peak in sub-harmonic range: 0.1× – 0.9× shaft freq
     sub_mask = (env_freqs >= 0.1 * fr) & (env_freqs <= 0.9 * fr)
     if not np.any(sub_mask):
