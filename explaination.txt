@@ -1,0 +1,324 @@
+Condition Monitoring System — Project Explanation
+===============================================
+
+This file describes the AI-In-CBMS project in detail, covering architecture, backend and frontend components, data flow, models, antigravity detection, configuration, and how the whole stack works.
+
+1. Project Overview
+-------------------
+
+The AI-In-CBMS repository implements a condition monitoring system for rotating machinery using vibration signals from a 3-axis MEMS accelerometer. It is composed of:
+
+- A Python FastAPI backend for feature extraction, inference, and API endpoints.
+- A React frontend dashboard powered by Vite for UI, model selection, and live data display.
+- Experimental antigravity detection support for reduced-gravity operating regimes.
+- Support scripts to generate synthetic data and retrain machine learning models.
+
+The backend and frontend are separate directories:
+
+- `/backend` contains the API, ML services, schemas, tests, and retraining scripts.
+- `/frontend` contains Vite configuration and React application source.
+- `/docs` contains supporting documentation and theory.
+
+2. Backend Architecture
+-----------------------
+
+The backend is a FastAPI application with the following main responsibilities:
+
+- Load and serve ML models.
+- Extract features from raw vibration signals.
+- Provide classification and antigravity analysis endpoints.
+- Allow model metadata inspection.
+
+Key backend files:
+
+- `backend/main.py`: FastAPI application entrypoint and lifecycle management.
+- `backend/schemas.py`: Pydantic request/response schemas and data validation.
+- `backend/routers/analysis.py`: API routes for classification, feature extraction, and antigravity analysis.
+- `backend/routers/models.py`: API route for listing available models and metadata.
+- `backend/services/feature_extractor.py`: Feature engineering code that converts raw accelerometer signals into numeric descriptors.
+- `backend/services/inference.py`: Model loading, RF/LSTM prediction, and regime classification logic.
+
+2.1. `backend/main.py`
+
+This file creates the FastAPI app, configures CORS, loads the inference service, and mounts routers.
+
+The app uses environment variables such as:
+
+- `ANTIGRAVITY_ENABLED`: toggles 7-class model behavior and new antigravity endpoints.
+- `API_HOST` / `API_PORT`: bind host and port for Uvicorn.
+- `CORS_ORIGINS`: allowed origins for browser requests.
+
+During startup, `main.py` instantiates `InferenceService` and calls `load_models()`.
+
+2.2. `backend/schemas.py`
+
+This file defines all request and response payloads for the API.
+
+Request models:
+
+- `AnalysisRequest`: payload for `/api/analysis/classify`.
+- `FeaturesRequest`: payload for `/api/analysis/features`.
+- `AntigravityAnalysisRequest`: payload for `/api/analysis/antigravity`.
+
+Response models:
+
+- `ClassificationResponse`: predicted class, confidence, probabilities, feature length, and antigravity probability.
+- `FeaturesResponse`: extracted feature vector, feature names, and optional antigravity feature details.
+- `AntigravityAnalysisResponse`: the six antigravity features, antigravity probability, and regime classification.
+- `ModelInfo` / `ModelsResponse`: model metadata returned by `/api/models/`.
+
+Validation includes minimum and maximum signal lengths, positive shaft RPM, and response field constraints.
+
+2.3. `backend/routers/analysis.py`
+
+This router implements the core analysis endpoints:
+
+- `POST /api/analysis/classify`
+  - Validates that `signal_x`, `signal_y`, and `signal_z` all have equal lengths.
+  - Computes feature vector with `extract_features()`.
+  - Uses RF inference to predict a fault class.
+  - Returns the predicted label, confidence, per-class probabilities, and antigravity probability if enabled.
+
+- `POST /api/analysis/features`
+  - Returns a 48-element baseline feature vector by default.
+  - If `include_antigravity_features=true`, returns 54 features and antigravity-specific details.
+  - Uses baseline mean and standard deviation values to mark anomalous antigravity feature values.
+
+- `POST /api/analysis/antigravity`
+  - Computes the six antigravity-sensitive features directly using raw signals.
+  - Runs RF inference and converts the antigravity softmax probability into a regime.
+  - Returns the computed `gli`, `ser`, `hcc`, `cpc`, `blza`, `gpi`, and `regime`.
+
+2.4. `backend/routers/models.py`
+
+This router returns metadata for all models, including whether antigravity is enabled and if models are loaded.
+
+It is used by the frontend dashboard to show model versions and capability.
+
+2.5. `backend/services/feature_extractor.py`
+
+This is the most important backend file for signal processing. It converts raw accelerometer waveforms into a fixed-length feature vector.
+
+Feature groups:
+
+- Time-domain features (15): RMS, peak, crest factor, kurtosis, and skewness for each axis.
+- Frequency-domain features (9): spectral centroid, spread, and entropy for each axis.
+- Bearing fault harmonics (4): amplitudes at BPFI, BPFO, BSF, and FTF.
+- Shaft harmonics (4): amplitudes at 1×, 2×, 3×, and 4× shaft speed on combined signal.
+- Envelope analysis (2): envelope RMS and kurtosis.
+- Cross-axis coherence (3): mean coherence between axis pairs.
+- Band energy ratios (4): energy distribution in 0–1 kHz, 1–5 kHz, 5–10 kHz, and >10 kHz.
+- Wavelet energy (4): detail energies from a simple Haar-like wavelet decomposition.
+- Combined statistics (3): peak-to-peak, shape factor, and impulse factor.
+- Antigravity-sensitive features (6): GLI, SER, HCC, CPC, BLZA, and GPI.
+
+Constants used in feature extraction:
+
+- `SAMPLE_RATE`: default 26667 Hz, configurable through `SENSOR_SAMPLE_RATE`.
+- `GRAVITY_MS2`: 9.81 m/s² for GLI calculation.
+- Bearing frequency coefficients: `BPFI_COEFF`, `BPFO_COEFF`, `BSF_COEFF`, `FTF_COEFF`.
+- Sub-synchronous band: `SUB_SYNC_LOW=0.1`, `SUB_SYNC_HIGH=0.4` of shaft frequency.
+- `PRECESSION_RATIO`: default 0.43 from rotordynamics literature.
+- `EXPECTED_1X_AMP`: expected 1× amplitude baseline.
+
+Antigravity features:
+
+- `compute_gli(z_signal, fs)`:
+  - Gravity Load Index is the DC offset of Z-axis acceleration normalized by 1g.
+  - Normal gravity is near `1.0`.
+  - Values near `0` indicate cancellation of gravitational load.
+
+- `compute_ser(sig, shaft_rpm, fs)`:
+  - Sub-synchronous Energy Ratio measures energy in the 0.15–0.35 shaft-frequency band relative to 1× energy.
+  - Higher values indicate stronger sub-synchronous / low-frequency motion.
+
+- `compute_hcc(value)`:
+  - Harmonic Cancellation Coefficient is computed from the first harmonic amplitude.
+  - Lower values indicate 1× harmonic cancellation.
+
+- `compute_cpc(x, z, shaft_rpm, fs)`:
+  - Cross-axis Phase Coherence estimates phase alignment between X and Z signals.
+  - Antigravity regimes often show weaker cross-axis coherence.
+
+- `compute_blza(bpfo, bpfi)`:
+  - Bearing Load Zone Asymmetry is derived from BPFI/BPFO amplitude ratios.
+  - Higher values may indicate off-loaded or asymmetric bearing contact.
+
+- `compute_gpi(z, shaft_rpm, fs)`:
+  - Gyroscopic Precession Index estimates precession frequency relative to shaft speed.
+  - In antigravity conditions, this approaches the configured `PRECESSION_RATIO`.
+
+2.6. `backend/services/inference.py`
+
+This file manages model loading, prediction, and antigravity regime classification.
+
+Models:
+
+- Random Forest: primary classifier loaded from `services/models/rf_model.pkl` or `rf_model_v2.pkl`.
+- LSTM: optional TensorFlow SavedModel loaded from `services/models/lstm_model/`.
+- cGAN-Hybrid: currently a stub placeholder for future hybrid discriminator logic.
+
+Model variants:
+
+- `v1` models use the 6-class label set: `normal, bpfi, bpfo, bsf, unbalance, misalignment, looseness`.
+- `v2` models add the experimental `antigravity` class.
+
+Threshold configuration:
+
+- `ANTIGRAVITY_THRESHOLD_NEAR_ZERO`: default `0.85`.
+- `ANTIGRAVITY_THRESHOLD_REDUCED`: default `0.30`.
+
+These thresholds are now configurable via environment variables and determine how the antigravity probability is mapped to regimes:
+
+- `near_zero_gravity` if probability ≥ `ANTIGRAVITY_THRESHOLD_NEAR_ZERO`
+- `reduced_gravity` if probability ≥ `ANTIGRAVITY_THRESHOLD_REDUCED`
+- `normal_gravity` otherwise
+
+This makes the behavior adjustable without code changes.
+
+Prediction flow:
+
+- `predict_rf(features)` runs the Random Forest and returns the predicted class, confidence, and probability dictionary.
+- `predict_lstm(features)` optionally runs the LSTM; if it is unavailable, it falls back to RF.
+- `get_antigravity_probability(prob_dict)` returns the antigravity softmax probability when enabled.
+
+Model metadata includes a placeholder `antigravity_f1` score of `0.83` when antigravity is enabled.
+
+3. Frontend Architecture
+------------------------
+
+The frontend is a React application using Vite, Axios, and Zustand.
+
+Key frontend files:
+
+- `frontend/package.json`: project dependencies and scripts.
+- `frontend/vite.config.js`: Vite config and API proxy to `http://localhost:8000`.
+- `frontend/src/api/client.js`: Axios client for backend requests.
+- `frontend/src/store/useStore.js`: application state management using Zustand.
+- `frontend/src/App.jsx`, `frontend/src/components/*`: UI components for the dashboard.
+
+3.1. Vite proxy
+
+The Vite dev server proxies `/api` requests to the backend at `http://localhost:8000`. This allows frontend code to call `/api/models`, `/api/analysis/classify`, etc. without changing request URLs in development.
+
+3.2. API client
+
+`frontend/src/api/client.js` defines the Axios client and exposes methods:
+
+- `api.classify(payload)`
+- `api.features(payload)`
+- `api.antigravity(payload)`
+- `api.models()`
+- `api.health()`
+
+3.3. State store
+
+`frontend/src/store/useStore.js` is the global Zustand store. It stores:
+
+- session metadata (`sessionId`, `windowIndex`, `shaftRpm`)
+- selected model and antigravity enabled state
+- latest classification and feature results
+- antigravity feature values, probability, and regime
+- model metadata list and UI state for loading/errors
+
+The store is used by UI components to keep the dashboard reactive.
+
+4. Data Flow
+-------------
+
+End-to-end flow:
+
+1. User interacts with the dashboard and sends vibration window data.
+2. Frontend calls the backend API via Axios.
+3. Backend validates payloads and extracts features from the raw signals.
+4. Depending on the endpoint, backend performs classification, feature extraction, or a dedicated antigravity analysis.
+5. The response is returned to the frontend and displayed in the dashboard.
+
+5. Antigravity Detection
+------------------------
+
+Antigravity detection is experimental and includes several supporting pieces:
+
+- A synthetic data generator for antigravity windows.
+- Extended feature vector size of 54 in the antigravity-enabled mode.
+- An antigravity class in the model output.
+- Dedicated endpoint `/api/analysis/antigravity`.
+- Regime classification thresholds now configurable.
+
+Antigravity detection can be enabled with `ANTIGRAVITY_ENABLED=true`.
+
+When enabled:
+
+- The backend loads `v2` models and returns 54-feature vectors.
+- The antigravity endpoint returns both the six computed antigravity features and the regime label.
+- The model metadata endpoint reports `antigravity_capable: true`.
+
+6. Configuration and Thresholds
+-------------------------------
+
+The project uses `.env.example` as a template for environment configuration.
+
+Important variables:
+
+- `ANTIGRAVITY_ENABLED`: toggle experimental antigravity support.
+- `SENSOR_SAMPLE_RATE`: sensor sampling rate used by feature extraction.
+- `PRECESSION_RATIO`: expected precession ratio used by GPI.
+- `EXPECTED_1X_AMPLITUDE`: normal 1× harmonic amplitude baseline.
+- `ANTIGRAVITY_THRESHOLD_NEAR_ZERO`: new environment variable for regime threshold.
+- `ANTIGRAVITY_THRESHOLD_REDUCED`: new environment variable for reduced-gravity threshold.
+
+These threshold values are now part of the environment configuration and can be adjusted to tune the regime classifier.
+
+7. Running the App
+------------------
+
+Backend:
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp ../.env.example .env
+# Optional: enable antigravity for 7-class support
+# ANTIGRAVITY_ENABLED=true
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open the dashboard in the browser at the Vite URL shown in the terminal.
+
+If you want the full system running, start both backend and frontend and ensure the backend is available at `http://localhost:8000`.
+
+8. Model Training and Data Generation
+-------------------------------------
+
+The repository includes scripts for generating synthetic antigravity data and retraining models.
+
+- `backend/scripts/generate_antigravity_data.py`: generates synthetic antigravity vibration windows.
+- `backend/scripts/retrain_rf.py`: retrains the Random Forest with the antigravity class.
+- `backend/scripts/retrain_lstm.py`: retrains or extends the LSTM model.
+- `backend/scripts/retrain_cgan.py`: architectural stub for future cGAN-Hybrid training.
+
+9. Limitations and Development Notes
+-------------------------------------
+
+- The antigravity support is experimental and based on synthetic signal generation.
+- The cGAN-Hybrid model is currently a stub and not a production classifier.
+- The backend can fall back to stub models if trained artifacts are missing.
+- `ANTIGRAVITY_ENABLED=false` maintains compatibility with 6-class operation.
+
+10. Summary of Changes Made
+---------------------------
+
+- Thresholds for antigravity regime classification are now configurable through `ANTIGRAVITY_THRESHOLD_NEAR_ZERO` and `ANTIGRAVITY_THRESHOLD_REDUCED`.
+- Created this `explaination.txt` file to document the project structure, behavior, and key concepts.
+
+This project is designed to be extended with real hardware data, retrained models, and a richer antigravity dashboard once validation is available.

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+# Allow fields starting with 'model_'
+BaseModel.model_config = ConfigDict(protected_namespaces=())
 
 # ── Class labels ──────────────────────────────────────────────────────────────
 

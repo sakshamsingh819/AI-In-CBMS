@@ -34,9 +34,13 @@ CLASSES_V2 = CLASSES_V1 + ["antigravity"]
 # ── Regime classification thresholds ──────────────────────────────────────────
 
 REGIME_THRESHOLDS = {
-    "near_zero_gravity": 0.85,
-    "reduced_gravity":   0.30,
-    "normal_gravity":    0.0,
+    "near_zero_gravity": float(
+        os.getenv("ANTIGRAVITY_THRESHOLD_NEAR_ZERO", "0.85")
+    ),
+    "reduced_gravity": float(
+        os.getenv("ANTIGRAVITY_THRESHOLD_REDUCED", "0.30")
+    ),
+    "normal_gravity": 0.0,
 }
 
 
